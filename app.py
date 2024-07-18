@@ -4,14 +4,22 @@ import pandas as pd
 import datetime
 import streamlit as st
 
+today = datetime.date.today()
+tomorrow = today + datetime.timedelta(days=1) 
+today_string = today.strftime('%Y-%m-%d')
+tomorrow_string = tomorrow.strftime('%Y-%m-%d')
+current_hour = datetime.datetime.now().hour
+
 def get_energy_prices(date):
-    api_url = 'https://mgrey.se/espot?format=json&date='+date
+    api_url = 'https://mgrey.se/espot?format=json&date='+date.strftime('%Y-%m-%d')
     response = requests.get(api_url)
     if response.status_code == 200:
         # Parse the JSON data
         data = json.loads(response.text)
         df_energy_prices = pd.json_normalize(data['SE3'])
         df_energy_prices['date'] = date
+        df_energy_prices['datetime'] = df_energy_prices.apply(lambda x : datetime.datetime.combine(x['date'], datetime.time(x['hour'])), axis = 1)
+        df_energy_prices['date'] = date.strftime('%Y-%m-%d')
         return df_energy_prices
     else:
         print(f"Error: API request failed with status code {response.status_code}")
@@ -20,20 +28,17 @@ def get_energy_prices(date):
 def find_best_time(df, consecutive_hours_needed, max_end_date, max_end_hour):
     df = df[(df['date'] < max_end_date) | ((df['date'] == max_end_date)  &  (df['hour'] <= max_end_hour))]
     df['rolling_sum'] = df['price_sek'].rolling(consecutive_hours_needed).mean()
-    df['start_time_rolling_sum'] = df['hour'].shift(consecutive_hours_needed)
-    df['start_date_rolling_sum'] = df['date'].shift(consecutive_hours_needed)
+    df['start_time_rolling_sum'] = df['hour'].shift(consecutive_hours_needed-1)
+    df['start_date_rolling_sum'] = df['date'].shift(consecutive_hours_needed-1)
     df_best_hour = df[df.rolling_sum.min() == df.rolling_sum]
     return df_best_hour
-    
 
-def plan_appliances(hours: int = 1, max_end_hour: int = 24 , max_end_date: str = 'NA'):
-    today = datetime.date.today()
-    tomorrow = today + datetime.timedelta(days=1) 
-    today_string = today.strftime('%Y-%m-%d')
-    tomorrow_string = tomorrow.strftime('%Y-%m-%d')
-    current_hour = datetime.datetime.now().hour
-    df_all_prices = pd.concat([get_energy_prices(today_string),(get_energy_prices(tomorrow_string))])
-    df_all_prices = df_all_prices[(df_all_prices['date'] > today_string) | (df_all_prices['hour'] > current_hour)]
+def get_current_prices():
+    df_all_prices = pd.concat([get_energy_prices(today),(get_energy_prices(tomorrow))])
+    df_all_prices = df_all_prices[(df_all_prices['date'] > today_string) | (df_all_prices['hour'] > current_hour)]  
+    return df_all_prices
+
+def plan_appliances(df_all_prices,hours: int = 1, max_end_hour: int = 24 , max_end_date: str = 'NA'):
     df_return = find_best_time(df_all_prices, hours,tomorrow_string, max_end_hour) 
     return "Start at hour " + str(int(df_return.start_time_rolling_sum.values[0])) + " for optimal prices in the next " + str(hours) + " hours"
     
@@ -71,13 +76,14 @@ def main():
     # Input fields
     consecutive_hours = st.number_input("Consecutive Hours:", min_value=1,max_value = 24, step=1)
     max_end_time = st.number_input("Max End Time:", min_value=1,max_value= 24,value =24, step=1)
-
+    df_all_prices = get_current_prices()
     # Output block
     if consecutive_hours and max_end_time:
         st.write(f"You have chosen the following input:")
         st.write(f"- Consecutive Hours: {consecutive_hours}")
         st.write(f"- Max End Time: {max_end_time}")
-        st.write(plan_appliances(consecutive_hours, max_end_time))
+        st.write(plan_appliances(df_all_prices,consecutive_hours, max_end_time))
 
+        st.bar_chart(df_all_prices, x="datetime", y="price_sek")
 if __name__ == "__main__":
     main()
