@@ -50,10 +50,10 @@ def plan_appliances(df_all_prices,hours: int = 1, max_end_hour: int = 24 , max_e
         st.metric(label="Best time to start", value=str(int(df_return.start_time_rolling_sum.values[0])) + ':00')
 
     with col2:
-        st.metric(label="Average price in SEK", value= (float(df_return.rolling_sum.values[0])))
-        
+        st.metric(label="Average price in SEK", value= round(float(df_return.rolling_sum.values[0]),2))
+
     with col3:
-        st.metric(label="% better than average", value= str(round(((average - (df_return.rolling_sum.values[0])) / average) * 100,2)) + '%')
+        st.metric(label="% better than average", value= str(round(((average - (df_return.rolling_sum.values[0])) / average),2)) + '%')
     return "Start at hour " + str(int(df_return.start_time_rolling_sum.values[0])) + " for optimal prices in the next " + str(hours) + " hours"
     
 
